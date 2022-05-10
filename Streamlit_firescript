@@ -1,0 +1,191 @@
+# streamlit_app.py
+
+import streamlit as st
+import mysql.connector
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from bokeh.transform import dodge
+from bokeh.palettes import magma
+from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid.shared import GridUpdateMode
+from bokeh.plotting import figure,output_notebook ,show
+from bokeh.models import ColumnDataSource
+import math
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import plotly.express as px
+from annotated_text import annotated_text
+from bokeh.io import curdoc
+
+
+
+
+
+from sqlalchemy import create_engine
+engine= create_engine("mysql+mysqldb://root:rootpass@localhost:3306/fire_data")
+
+
+
+Incidents=pd.read_sql("SELECT * FROM Incidents",con=engine)
+violations_lens = pd.read_sql("SELECT * FROM lens_on_violations",con=engine).set_index('zipcode')
+lens_on_violations = pd.read_sql("SELECT * FROM lens_on_violations",con=engine)
+lens_on_violations2=pd.read_sql("SELECT * FROM lens_on_violations",con=engine).drop_duplicates(subset=['violation item description']).set_index('violation item description')
+Incidents2=pd.read_sql("SELECT * FROM Incidents",con=engine).set_index('neighborhood_district')
+
+
+st.set_page_config(layout="wide")
+
+# Print results.
+def aggrid_interactive_table(df: pd.DataFrame):
+    """Creates an st-aggrid interactive table based on a dataframe.
+
+    Args:
+        df (pd.DataFrame]): Source dataframe
+
+    Returns:
+        dict: The selected row
+    """
+    options = GridOptionsBuilder.from_dataframe(
+        df, enableRowGroup=True, enableValue=True, enablePivot=True
+    )
+
+    options.configure_side_bar()
+
+    options.configure_selection("single")
+    selection = AgGrid(
+        df,
+        enable_enterprise_modules=True,
+        gridOptions=options.build(),
+        theme="light",
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        allow_unsafe_jscode=True,
+    )
+
+    return selection
+
+st.markdown("""
+<style>
+.big-font {
+    font-size:85px !important;
+    text-align: center;
+    color: Orange;
+}
+</style><p class="big-font"> San Francisco Fire Department</p>
+""", unsafe_allow_html=True)
+
+
+
+#st.markdown('<p class="big-font">Fire Department</p>',unsafe_allow_html=True)
+#st.markdown("<h1 style='text-align: center; color: red;'>Fire Department</h1>", unsafe_allow_html=True)
+#st.markdown("""<h1 style='text-align: center;'>Fire Department</h1>""",unsafe_allow_html=True)
+
+
+
+
+df=pd.DataFrame(Incidents)
+
+col1,col2=st.columns(2)
+
+with col1:
+
+
+    st.subheader('Most Common Violation per zipcode')
+    DataFrame=violations_lens[['violation item description']]
+    st.dataframe(DataFrame)
+
+
+    ##st.subheader('Incident date by count of Incident number')
+    #a1 = df.groupby("Incident Date").agg({"Incident Number":len})
+    #st.line_chart(a1)
+
+
+    st.subheader('Incident date by count of Incident number')
+    df=pd.DataFrame(Incidents)
+    fig = px.line(df.groupby("Incident Date").agg({"Incident Number":len}).reset_index(), x='Incident Date', y="Incident Number")
+    st.plotly_chart(fig)
+
+
+    st.subheader('Time Taken for response per zipcode')
+    violations_lens1=violations_lens.reset_index().drop_duplicates(subset=['zipcode'])
+    violations_lens1['zipcode']=violations_lens1['zipcode'].astype(str)
+    violations_lens_cds=ColumnDataSource(violations_lens1)
+    curdoc().theme='contrast'
+    p1=figure(x_range=violations_lens1['zipcode'],width=600,toolbar_location=None, tools="")
+    #p1.background_fill_color='Black'
+    #p1.background_fill_alpha=0.7
+    p1.xaxis.major_label_orientation=math.pi/4
+    p1.vbar(x='zipcode',top='time_diff',source=violations_lens_cds)
+    st.bokeh_chart(p1)
+
+    st.subheader('Number of violations by zipcode')
+    violations_lens1=violations_lens.reset_index().drop_duplicates(subset=['zipcode'])
+    violations_lens1['zipcode']=violations_lens1['zipcode'].astype(str)
+    violations_lens_cds=ColumnDataSource(violations_lens1)
+    p=figure(x_range=violations_lens1['zipcode'],width=600,toolbar_location=None, tools="")
+    p.xaxis.major_label_orientation=math.pi/4
+    p.vbar(x='zipcode',top='num_violations',source=violations_lens_cds)
+    st.bokeh_chart(p)
+
+#aggrid_interactive_table(df)
+#aggrid_interactive_table(violations_lens)
+
+with col2:
+
+    st.subheader('Number of incidents by zipcode')
+    violations_lens1=violations_lens.reset_index().drop_duplicates(subset=['zipcode']).dropna()
+    violations_lens1['zipcode']=violations_lens1['zipcode'].astype(str)
+    violations_lens_cds=ColumnDataSource(violations_lens1)
+    p3=figure(x_range=violations_lens1['zipcode'],width=600,toolbar_location=None, tools="")
+    p3.xaxis.major_label_orientation=math.pi/4
+    p3.vbar(x='zipcode',top='num_incidents',source=violations_lens_cds)
+    st.bokeh_chart(p3)
+##
+    #st.subheader('Number of incidents by Number of violations ')
+    #a5=lens_on_violations[['num_violations','num_incidents']]
+    #st.line_chart(a5)
+    st.subheader('Number of incidents by Number of violations ')
+    violations_lens1=lens_on_violations.reset_index().drop_duplicates(subset=['zipcode']).dropna()
+    violations_lens1['zipcode']=violations_lens1['zipcode'].astype(str)
+    violations_lens1.sort_values(by = ['num_violations'], ascending = True, inplace = True)
+    violations_lens_cds=ColumnDataSource(violations_lens1)
+    p3=figure(width=600,toolbar_location=None, tools="")
+    p3.xaxis.major_label_orientation=math.pi/4
+    p3.line(x='num_violations',y='num_incidents',source=violations_lens_cds)
+    st.bokeh_chart(p3)
+
+ #####
+    st.subheader('Violations with violation item description')
+    violations_lens_cds=ColumnDataSource(lens_on_violations2)
+    p=figure(x_range=list(lens_on_violations2.index),width=600,toolbar_location=None, tools="")
+    p.xaxis.major_label_orientation=math.pi/4
+    p.vbar(x='violation item description',top='num_violations',source=violations_lens_cds)
+    st.bokeh_chart(p)
+
+##
+
+    st.subheader('Number of incidents & Number of violations by zipcode')
+    violations_lens1=violations_lens.reset_index().drop_duplicates(subset=['zipcode']).dropna()
+    violations_lens1['zipcode']=violations_lens1['zipcode'].astype(str)
+
+    trace1=go.Bar(
+           x=violations_lens1['zipcode'],
+           y=violations_lens1['num_incidents'],
+           name='Num of Incidents',
+           marker=dict(
+                color='rgb(34,163,192)'
+                      )
+           )
+    trace2=go.Scatter(
+        x=violations_lens1['zipcode'],
+        y=violations_lens1['num_violations'],
+        name='Num of Violations',
+        yaxis='y2'
+    )
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(trace1)
+    fig.add_trace(trace2,secondary_y=True)
+    fig['layout'].update(height = 600, width = 800,xaxis=dict(
+          tickangle=-90
+        ))
+    st.plotly_chart(fig)
